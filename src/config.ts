@@ -29,8 +29,16 @@ export function loadConfig() {
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('PUBLIC_URL must be an HTTP(S) URL without credentials');
     publicHost = url.hostname;
   }
+  const oauthEnabled = transport === 'http' && !publicRead && process.env.OAUTH_ENABLED !== 'false' && (process.env.OAUTH_ENABLED === 'true' || !!publicUrl);
+  if (oauthEnabled) {
+    if (!publicUrl) throw new Error('OAuth requires PUBLIC_URL');
+    const url = new URL(publicUrl);
+    if (url.pathname !== '/' || url.search || url.hash || (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname))) {
+      throw new Error('OAuth PUBLIC_URL must be an HTTPS origin (HTTP only on localhost or 127.0.0.1)');
+    }
+  }
   return {
-    transport, host, token, publicRead, autoToken, publicUrl, repoUrl, branch,
+    transport, host, token, publicRead, autoToken, publicUrl, oauthEnabled, repoUrl, branch,
     port: integer('PORT', 3000, 1, 65535),
     dataDir: resolve(process.env.DATA_DIR ?? 'data'),
     repoDir: resolve(process.env.REPO_DIR ?? 'content/repository'),

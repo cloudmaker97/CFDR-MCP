@@ -9,7 +9,8 @@ services:
     environment:
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
       AUTO_AUTH_TOKEN: ${AUTO_AUTH_TOKEN:-true}
-      PUBLIC_URL: ${PUBLIC_URL:-}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      OAUTH_ENABLED: ${OAUTH_ENABLED:-true}
       ALLOW_PUBLIC_READ: ${ALLOW_PUBLIC_READ:-false}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}

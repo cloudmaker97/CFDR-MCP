@@ -9,14 +9,22 @@ import type { RepositorySync } from './sync.js';
 import { createMcpServer } from './mcp.js';
 import { fileURLToPath } from 'node:url';
 import { LEGAL_DISCLAIMER } from './disclaimer.js';
+import { installOAuth } from './oauth.js';
 
 export function createHttpApp(config: Config, store: ContentStore, sync: RepositorySync, log: Logger) {
   const app = express();
   if (config.transport === 'http' && !config.token && !config.publicRead) throw new Error('Initialize authentication before creating the HTTP app');
   app.disable('x-powered-by');
   app.use(hostHeaderValidation(config.allowedHosts));
+  app.use(['/authorize', '/token', '/register', '/revoke', '/oauth/approve'], (req, res, next) => {
+    const start = performance.now();
+    res.on('finish', () => log.info({ method: req.method, status: res.statusCode, durationMs: Math.round((performance.now() - start) * 100) / 100 }, 'OAuth request'));
+    next();
+  });
+  const oauthAuth = config.oauthEnabled ? installOAuth(app, config) : undefined;
   app.get('/', (_req, res) => res.json({ name: 'Deutsches Recht MCP', disclaimer: LEGAL_DISCLAIMER,
     endpoint: '/mcp', guide: '/guide', readiness: '/readyz',
+    oauth: config.oauthEnabled ? { enabled: true, discovery: '/.well-known/oauth-authorization-server', login: 'Verbindung im MCP-Client per OAuth starten; auf dieser Serverdomain mit dem API-Schlüssel freigeben.' } : { enabled: false },
     authentication: config.token ? 'Authorization: Bearer <Token>. /mcp ist ein MCP-Endpunkt, keine Browserseite.' : 'Öffentlicher Lesezugriff wurde ausdrücklich aktiviert.' }));
   app.get('/guide', (_req, res) => res.type('text/plain; charset=utf-8').sendFile(fileURLToPath(new URL('../docs/NUTZUNG.md', import.meta.url))));
   app.get('/disclaimer', (_req, res) => res.type('text/plain; charset=utf-8').send(LEGAL_DISCLAIMER));
@@ -46,10 +54,14 @@ export function createHttpApp(config: Config, store: ContentStore, sync: Reposit
       const actual = Buffer.from(req.headers.authorization ?? '');
       const expected = Buffer.from(`Bearer ${config.token}`);
       if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+        if (oauthAuth) { oauthAuth(req, res, next); return; }
         res.setHeader('WWW-Authenticate', 'Bearer realm="deutsches-recht-mcp"');
         res.status(401).json({ error: 'Unauthorized' }); return;
       }
     }
+    next();
+  });
+  app.use(['/mcp', '/metrics'], (req, res, next) => {
     const key = req.ip ?? 'unknown';
     let bucket = clients.get(key);
     if (!bucket || bucket.expires <= Date.now()) {

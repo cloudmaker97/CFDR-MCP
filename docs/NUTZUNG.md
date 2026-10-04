@@ -18,6 +18,12 @@ Verfügbar sind Skills, Referenzen, Arbeitsabläufe, Vorlagen und weitere Textdo
 
 Die Einrichtung für Coolify, Claude Web, Claude Code, ChatGPT Web und OpenAI Codex CLI steht in der README des Serverprojekts.
 
+Wählen Sie OAuth mit automatischer Clientregistrierung (DCR). Bei der Anmeldung öffnet sich
+die Freigabeseite auf der Domain Ihres MCP-Servers. Prüfen Sie die Adresse, geben Sie dort den
+API-Schlüssel des Betreibers ein und bestätigen Sie **Lesezugriff erlauben**. In Coolify entspricht
+dieser Schlüssel `SERVICE_PASSWORD_64_LEGALMCP`. Er gehört weder in Chatnachrichten noch in
+Felder für OAuth-Client-Secrets. Nach einem Schlüsselwechsel müssen Sie sich erneut anmelden.
+
 Rufen Sie im verbundenen Client auf:
 
 > Nutze den MCP „deutsches-recht“. Rufe zuerst `server_status` auf und sage mir, ob der Index bereit ist, welcher Commit verwendet wird und ob das letzte Update erfolgreich war. Lade noch keine Fachinhalte.
@@ -93,7 +99,9 @@ Texte, die Sie zusätzlich in Claude, ChatGPT oder einen anderen Client eingeben
 
 | Anzeige | Vorgehen |
 | --- | --- |
-| `Unauthorized` / 401 | Bearer-Header und Token prüfen; ChatGPT Web unterstützt diesen statischen Token nicht unmittelbar. Einrichtung in der README beachten. |
+| `Unauthorized` / 401 | OAuth-Anmeldung im Client starten oder erneuern; bei statischer CLI-Konfiguration Bearer-Header und API-Schlüssel prüfen. |
+| OAuth-Anmeldung schlägt fehl | DCR/automatische Registrierung wählen; Betreiber muss `OAUTH_ENABLED=true` und die korrekte HTTPS-`PUBLIC_URL` setzen. |
+| `API-Schlüssel ungültig` | Den aktuellen Betreiber-Schlüssel verwenden; nach fünf Fehlversuchen Verbindung neu starten. |
 | 403 / `Invalid Host` | Der Betreiber muss den öffentlichen Host über `PUBLIC_URL` oder `ALLOWED_HOSTS` freigeben. |
 | 403 / `Origin not allowed` | Der Betreiber muss den tatsächlich verwendeten Browser-Origin gezielt freigeben, falls der Client einen Origin sendet. |
 | 503 / `Index is building` | Erstdownload und Indexaufbau abwarten; `/readyz` und Betreiberlogs prüfen. |

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, unlink } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { request } from 'node:http';
+import { request, createServer } from 'node:http';
 import pino from 'pino';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -63,6 +63,41 @@ test('FTS ranks skill metadata and filters collection/kind safely', () => {
   assert.equal(store.stats.documents, 2);
   assert.throws(() => store.getContent('untracked-secret.md'), /Unknown document/);
   assert.throws(() => store.getContent('../../.env'), /Unknown document/);
+});
+
+test('official MCP client completes OAuth discovery, registration, PKCE and authenticated retrieval', async () => {
+  const listener = createServer(); listener.listen(0, '127.0.0.1');
+  await new Promise(r => listener.once('listening', r));
+  const url = `http://127.0.0.1:${listener.address().port}`;
+  const oauthApp = createHttpApp({ ...config, oauthEnabled: true, publicUrl: url, dataDir: join(root, 'oauth-client-data') }, store, { updating: false, lastError: null }, log);
+  listener.on('request', oauthApp);
+  let clientInfo, tokens, verifier, authorization;
+  const provider = {
+    redirectUrl: 'http://127.0.0.1:54321/callback',
+    clientMetadata: { redirect_uris: ['http://127.0.0.1:54321/callback'], token_endpoint_auth_method: 'none', client_name: 'SDK integration', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] },
+    clientInformation: () => clientInfo, saveClientInformation: value => { clientInfo = value; },
+    tokens: () => tokens, saveTokens: value => { tokens = value; },
+    saveCodeVerifier: value => { verifier = value; }, codeVerifier: () => verifier,
+    redirectToAuthorization: value => { authorization = value; }, state: () => 'sdk-state',
+  };
+  const client = new Client({ name: 'oauth-test', version: '1' });
+  const transport = new StreamableHTTPClientTransport(new URL(`${url}/mcp`), { authProvider: provider });
+  try {
+    await assert.rejects(client.connect(transport)); assert.ok(authorization); assert.ok(clientInfo);
+    const page = await fetch(authorization); const html = await page.text();
+    const approval = await fetch(`${url}/oauth/approve`, { method: 'POST', redirect: 'manual', headers: {
+      'Content-Type': 'application/x-www-form-urlencoded', Cookie: page.headers.get('set-cookie').split(';')[0], Origin: url,
+    }, body: new URLSearchParams({ request: /name="request" value="([^"]+)"/.exec(html)[1], csrf: /name="csrf" value="([^"]+)"/.exec(html)[1], api_key: config.token, action: 'allow' }) });
+    assert.equal(approval.status, 303);
+    const callback = new URL(approval.headers.get('location')); assert.equal(callback.searchParams.get('state'), 'sdk-state');
+    await transport.finishAuth(callback.searchParams.get('code'));
+    await client.close();
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${url}/mcp`), { authProvider: provider }));
+    assert.equal((await client.listTools()).tools.length, 6);
+    const result = await client.callTool({ name: 'search', arguments: { query: 'AVV DSGVO' } });
+    assert.equal(result.structuredContent.results[0].id, skillId);
+    assert.ok(tokens.access_token); assert.ok(tokens.refresh_token);
+  } finally { await client.close(); oauthApp.locals.stopRateLimiter(); await new Promise(r => listener.close(r)); oauthApp.locals.stopOAuth(); }
 });
 test('paging reconstructs Unicode content without loss or oversized pages', () => {
   let offset = 0, result = '';
