@@ -5,7 +5,7 @@ import { ContentStore } from './store.js';
 import type { RepositorySync } from './sync.js';
 import { LEGAL_DISCLAIMER } from './disclaimer.js';
 
-const kind = z.enum(['skill', 'agent', 'command', 'reference', 'template', 'document']);
+const kind = z.enum(['skill', 'agent', 'command', 'reference', 'template', 'document', 'fixture', 'meta']);
 const id = z.string().min(1).max(1000);
 const offset = z.number().int().min(0).max(10_000_000).default(0);
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -26,7 +26,7 @@ export function createMcpServer(store: ContentStore, sync: RepositorySync, log: 
     }
   };
   server.registerTool('search', {
-    description: 'Search German legal skills and supporting text. Returns IDs, titles, source URLs, short snippets, and matching offsets. Use fetch or get_content next; narrow by collection/kind. All non-stopword query terms must match; try fewer terms if empty.',
+    description: 'Search German legal skills and supporting text. Returns IDs, titles, URLs and verbatim snippets with exact UTF-16 start/end offsets. Tries all terms first; if empty, uses OR ranking requiring at least half the terms, with fallback, matchedTerms and droppedTerms. Fixture/meta documents are excluded unless kind is explicit. Use fetch/get_content for needed results; narrow by collection/kind.',
     inputSchema: { query: z.string().min(1).max(500), limit: z.number().int().min(1).max(20).default(8), collection: z.string().max(150).optional(), kind: kind.optional() }, annotations,
   }, wrap('search', ({ query, limit, collection, kind }) => store.search(query, limit, collection, kind)));
   server.registerTool('fetch', {

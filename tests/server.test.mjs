@@ -179,7 +179,10 @@ test('sync updates content, invalidates cache, handles deletions, and retains la
     await unlink(join(repo, 'datenschutzrecht/references/long.md')); commit();
     await sync.refresh();
     assert.notEqual(targetStore.stats.commit, previous);
-    assert.equal(targetStore.search('AVV DSGVO').results.length, 0);
+    const updatedSearch = targetStore.search('AVV DSGVO');
+    assert.equal(updatedSearch.fallback, true);
+    assert.deepEqual(updatedSearch.results[0].droppedTerms, ['dsgvo']);
+    assert.ok(!updatedSearch.results[0].snippet.includes('DSGVO'));
     assert.equal(targetStore.search('Arbeitsrecht Kündigung').results.length, 1);
     assert.throws(() => targetStore.getContent('datenschutzrecht/references/long.md'), /Unknown document/);
     const current = targetStore.stats.commit;

@@ -345,6 +345,18 @@ Discovery: `/.well-known/oauth-authorization-server` und `/.well-known/oauth-pro
 Protokollgrundlage: [MCP-Autorisierung](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
 OAuth läuft vollständig im Server; es braucht keinen zusätzlichen Identity Provider.
 
+Die Suche versucht zunächst alle Suchbegriffe. Ohne Treffer folgt eine OR-Suche mit mindestens
+der Hälfte der Begriffe (aufgerundet). `fallback`, `minimumMatch` sowie `matchedTerms` und
+`droppedTerms` pro Treffer machen die Lockerung sichtbar. Der Fallback untersucht höchstens
+4.096 Kandidaten. Snippets sind wörtliche Ausschnitte des Originaldokuments; `start` und `end`
+sind die exakten UTF-16-Positionen dieses Ausschnitts (`end` exklusiv).
+`fixture` und `meta` werden standardmäßig ausgeschlossen und können mit dem expliziten
+`kind`-Filter durchsucht werden. Fachreferenzen innerhalb einer Collection bleiben enthalten.
+Generische Slug-Beschreibungen fallen auf vorhandene H1-Überschriften zurück; bekannte
+Boilerplate wird nur aus dem Suchindex entfernt. Originaltexte bleiben unverändert abrufbar.
+`server_status.index.skippedByReason` schlüsselt ausgelassene Dateien nach Ursache auf.
+Indexversion 2 wird beim nächsten Abgleich automatisch neu aufgebaut.
+
 SQLite FTS5, gewichtetes BM25, Präfixindexe, vorbereitete Abfragen und begrenzter Cache halten Abfragen klein.
 Worker bauen Ersatzindexe im Hintergrund. [Gemessene Performance](docs/performance.md).
 SQLite-Abfragen laufen im Hauptprozess synchron; breite uncached Suchen beanspruchen den Event-Loop.

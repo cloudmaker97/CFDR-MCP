@@ -7,7 +7,11 @@ import { parse } from 'yaml';
 
 const exec = promisify(execFile);
 const extensions = new Set(['.md', '.txt', '.rst', '.json', '.yaml', '.yml', '.toml', '.csv']);
-export const INDEX_VERSION = 1;
+export const INDEX_VERSION = 2;
+export function removeBoilerplate(text: string) {
+  return text.replace(/ordnet Norm, Beweislast und Gegenargument[^;\n]*(?:;|$)/gi, '')
+    .replace(/(?:liefert (?:ein )?)?Prüfprodukt mit Risiko und nächstem Schritt[^.\n]*(?:\.|$)/gi, '').trim();
+}
 export const TEXT_PATTERNS = [...extensions].flatMap(extension => [`*${extension}`, `*${extension.toUpperCase()}`]).concat(['LICENSE*', 'NOTICE']);
 
 export function chunkText(text: string, size = 4000): Array<{ start: number; end: number; text: string }> {
@@ -37,9 +41,17 @@ export function metadata(path: string, text: string) {
   }
   const heading = text.match(/^#\s+(.+)$/m)?.[1];
   const title = String(front.name ?? heading ?? basename(path)).slice(0, 240);
-  const description = String(front.description ?? heading ?? '').slice(0, 1000);
+  const rawDescription = String(front.description ?? '');
+  const slug = path.split('/').at(-2) ?? '';
+  const normalized = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const label = rawDescription.match(/^Für\s+([^:]+):/i)?.[1];
+  const description = ((heading && (!rawDescription || (label && normalized(label) === normalized(slug))))
+    ? heading : rawDescription || heading || '').slice(0, 1000);
   const collection = path.includes('/') ? path.split('/')[0] : '_repository';
-  const kind = basename(path) === 'SKILL.md' ? 'skill'
+  const parts = path.toLowerCase().split('/');
+  const kind = parts.some(part => ['testakten', 'tests', 'fixtures'].includes(part)) ? 'fixture'
+    : parts[0] === 'references' || parts.some(part => ['quality', 'skills-index', 'scripts', 'docs', 'prompts', 'audit', 'audits'].includes(part)) ? 'meta'
+    : basename(path) === 'SKILL.md' ? 'skill'
     : path.includes('/agents/') ? 'agent'
     : path.includes('/commands/') ? 'command'
     : path.includes('/references/') ? 'reference'
@@ -54,6 +66,8 @@ export async function buildIndex(options: {
   const { stdout } = await exec('git', ['-c', `safe.directory=${options.repoDir.replaceAll('\\', '/')}`, '-C', options.repoDir, 'ls-files', '-z'], { maxBuffer: 32 * 1024 * 1024 });
   const db = new DatabaseSync(options.output);
   let documents = 0, chunks = 0, skipped = 0, bytes = 0;
+  const skippedByReason: Record<string, number> = {};
+  const skip = (reason: string) => { skipped++; skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1; };
   try {
     db.exec(`PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA temp_store=MEMORY;
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -72,12 +86,13 @@ export async function buildIndex(options: {
     const verifiedDirectories = new Set<string>();
     for (const path of stdout.split('\0').filter(Boolean).sort()) {
       if (!extensions.has(extname(path).toLowerCase()) && !/^LICENSE(?:-|$)|^NOTICE$/.test(basename(path))) {
-        skipped++; continue;
+        skip('unsupportedExtension'); continue;
       }
       // Only tracked regular files; reject symlinks in any path component.
       const absolute = resolve(root, path);
-      if (!absolute.startsWith(root + sep)) { skipped++; continue; }
+      if (!absolute.startsWith(root + sep)) { skip('unsafePath'); continue; }
       let safe = true;
+      let unsafeReason = 'missingFile';
       let current = root;
       for (const part of path.split('/')) {
         current = resolve(current, part);
@@ -87,29 +102,30 @@ export async function buildIndex(options: {
           throw error;
         });
         if (!component) { safe = false; break; }
-        if (component.isSymbolicLink()) { safe = false; break; }
+        if (component.isSymbolicLink()) { safe = false; unsafeReason = 'symlink'; break; }
         if (component.isDirectory()) verifiedDirectories.add(current);
       }
-      if (!safe) { skipped++; continue; }
+      if (!safe) { skip(unsafeReason); continue; }
       const stat = await lstat(absolute);
-      if (!stat.isFile() || stat.size > options.maxFileBytes) { skipped++; continue; }
+      if (!stat.isFile()) { skip('notRegularFile'); continue; }
+      if (stat.size > options.maxFileBytes) { skip('tooLarge'); continue; }
       const buffer = await readFile(absolute);
-      if (buffer.includes(0)) { skipped++; continue; }
+      if (buffer.includes(0)) { skip('binary'); continue; }
       let text: string;
       try { text = new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
-      catch { skipped++; continue; }
+      catch { skip('invalidUtf8'); continue; }
       const meta = metadata(path, text);
       const url = `${options.sourceBaseUrl.replace(/\/$/, '')}/blob/${options.commit}/${path.split('/').map(encodeURIComponent).join('/')}`;
       docInsert.run(path, meta.title, meta.description, meta.collection, meta.kind, text, url);
       for (const chunk of chunkText(text)) {
-        chunkInsert.run(path, meta.title, `${meta.collection} ${path} ${meta.description}`, chunk.text, chunk.start, chunk.end);
+        chunkInsert.run(path, meta.title, `${meta.collection} ${path} ${removeBoilerplate(meta.description)}`, removeBoilerplate(chunk.text), chunk.start, chunk.end);
         chunks++;
       }
       documents++; bytes += buffer.length;
     }
     db.exec("INSERT INTO search_index(search_index) VALUES('rebuild'); INSERT INTO search_index(search_index) VALUES('optimize');");
     const stats = { commit: options.commit, indexVersion: INDEX_VERSION, maxFileBytes: options.maxFileBytes,
-      sourceBaseUrl: options.sourceBaseUrl, documents, chunks, skipped, bytes,
+      sourceBaseUrl: options.sourceBaseUrl, documents, chunks, skipped, skippedByReason, bytes,
       builtAt: new Date().toISOString(), buildMs: Math.round(performance.now() - started) };
     db.prepare('INSERT INTO meta VALUES (?, ?)').run('stats', JSON.stringify(stats));
     db.exec('COMMIT; PRAGMA optimize;');

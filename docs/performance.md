@@ -1,5 +1,18 @@
 # Performance measurements
 
+Index version 2 was measured on the same Windows x64 / Node.js v24.19.0 corpus
+and commit below: 29,763 documents, 68,816 chunks, 216,663,113 source bytes.
+Construction took 36.8 seconds; the index occupied 770,473,984 bytes.
+The standard 210-sample benchmark measured 7.15 ms uncached median, 40.40 ms p95,
+46.99 ms maximum, and 0.0051 ms cached median. Final process RSS was 258 MB.
+Snippets now scan original document text for a relevant verbatim window, preserving exact offsets.
+A separate cold query adding an absent term to the seven-term employment-law example
+exercised OR fallback in 195.7 ms (single sample, not a latency percentile).
+These local measurements do not predict production network or concurrent-load latency.
+All 11,066 skipped files in this checkout had unsupported extensions.
+
+## Earlier index version 1
+
 Measured locally on Windows x64, Node.js v24.19.0, using upstream commit
 `0b950ecd040a26cc672d1eb53ca0933cb3b8ba9f`.
 
