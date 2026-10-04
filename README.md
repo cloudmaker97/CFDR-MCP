@@ -332,6 +332,9 @@ OAuth-Logs nennen bei abgewiesenen Formularen einen nicht vertraulichen `failure
 `cookie_missing`, `request_missing_or_expired`, `csrf_mismatch`, `origin_mismatch` oder `invalid_api_key`.
 Ein falscher Schlüssel zeigt ausdrücklich **„API-Schlüssel ungültig“**; `source: environment` im
 Startlog bestätigt, dass ein Schlüssel aus der Umgebung geladen wurde, ohne ihn auszugeben.
+Bleibt bei erfolgreichem `POST → 303` die Freigabeseite sichtbar, den aktuellen Serverstand
+deployen und die Anmeldung neu starten: Die CSP erlaubt die Weiterleitung zur registrierten
+Callback-Domain. Ein zweiter Klick auf ein bereits verbrauchtes Formular ist keine neue Anmeldung.
 
 `data/oauth.sqlite` speichert Clientdaten und Freigaben persistent. Zugriffs- und Refresh-Tokens
 liegen nur als SHA-256-Hashes vor; registrierte Client-Secrets sind für die SDK-Authentifizierung in

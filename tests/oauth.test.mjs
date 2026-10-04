@@ -70,6 +70,8 @@ test('OAuth discovery, escaped consent, PKCE login and API-key compatibility', (
   const flow = await f.authorize(client);
   assert.match(flow.html, /&lt;script&gt;/); assert.ok(!flow.html.includes(apiKey)); assert.match(flow.html, /Keine Rechtsberatung/);
   assert.match(flow.response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.match(flow.response.headers.get('content-security-policy'), /form-action 'self' https:\/\/client\.example;/);
+  assert.ok(!flow.response.headers.get('content-security-policy').includes('*'));
   assert.equal(flow.response.headers.get('referrer-policy'), 'same-origin');
   assert.match(flow.response.headers.get('set-cookie'), /HttpOnly/);
   const approved = await f.approve(flow); assert.equal(approved.status, 303);
