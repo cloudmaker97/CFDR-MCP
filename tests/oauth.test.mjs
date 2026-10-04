@@ -168,13 +168,33 @@ test('expired access tokens and codes fail closed', () => fixture(async f => {
 }));
 
 test('OAuth configuration requires a fixed secure origin and can be explicitly disabled', () => {
-  const previous = Object.fromEntries(['PUBLIC_URL', 'OAUTH_ENABLED', 'ALLOW_PUBLIC_READ'].map(key => [key, process.env[key]]));
+  const previous = Object.fromEntries(['PUBLIC_URL', 'OAUTH_ENABLED', 'ALLOW_PUBLIC_READ', 'SERVICE_URL_LEGAL_MCP_3000', 'SERVICE_URL_LEGAL_MCP', 'COOLIFY_URL'].map(key => [key, process.env[key]]));
   try {
+    delete process.env.SERVICE_URL_LEGAL_MCP_3000; delete process.env.SERVICE_URL_LEGAL_MCP; delete process.env.COOLIFY_URL;
     process.env.OAUTH_ENABLED = 'true'; process.env.ALLOW_PUBLIC_READ = 'false';
     for (const url of ['', 'http://remote.example', 'https://recht.example/path', 'https://recht.example/?x=1', 'https://recht.example/#fragment']) {
       process.env.PUBLIC_URL = url; assert.throws(loadConfig, /OAuth/);
     }
     process.env.PUBLIC_URL = 'https://recht.example'; assert.equal(loadConfig().oauthEnabled, true);
     process.env.OAUTH_ENABLED = 'false'; assert.equal(loadConfig().oauthEnabled, false);
+  } finally { for (const [key, value] of Object.entries(previous)) value === undefined ? delete process.env[key] : process.env[key] = value; }
+});
+
+test('Coolify URL fallback tolerates empty PUBLIC_URL and explicit origins take precedence', () => {
+  const names = ['PUBLIC_URL', 'SERVICE_URL_LEGAL_MCP_3000', 'SERVICE_URL_LEGAL_MCP', 'COOLIFY_URL', 'OAUTH_ENABLED', 'ALLOW_PUBLIC_READ', 'TRANSPORT'];
+  const previous = Object.fromEntries(names.map(key => [key, process.env[key]]));
+  try {
+    for (const key of names) delete process.env[key];
+    process.env.TRANSPORT = 'http'; process.env.OAUTH_ENABLED = 'true'; process.env.PUBLIC_URL = '  ';
+    process.env.COOLIFY_URL = 'https://application.example';
+    assert.equal(loadConfig().publicUrl, 'https://application.example');
+    process.env.SERVICE_URL_LEGAL_MCP_3000 = 'https://service.example';
+    assert.equal(loadConfig().publicUrl, 'https://service.example');
+    process.env.PUBLIC_URL = ' https://canonical.example ';
+    assert.equal(loadConfig().publicUrl, 'https://canonical.example');
+    assert.ok(loadConfig().allowedHosts.includes('canonical.example'));
+    process.env.PUBLIC_URL = ''; process.env.SERVICE_URL_LEGAL_MCP_3000 = '';
+    process.env.COOLIFY_URL = 'http://application.example';
+    assert.throws(loadConfig, /HTTPS origin/);
   } finally { for (const [key, value] of Object.entries(previous)) value === undefined ? delete process.env[key] : process.env[key] = value; }
 });

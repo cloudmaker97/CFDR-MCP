@@ -22,7 +22,9 @@ export function loadConfig() {
   if (transport === 'http' && !token && !publicRead && !autoToken) {
     throw new Error('HTTP requires MCP_AUTH_TOKEN, AUTO_AUTH_TOKEN=true, or explicit ALLOW_PUBLIC_READ=true');
   }
-  const publicUrl = process.env.PUBLIC_URL ?? '';
+  // Use deployment configuration only; never infer the OAuth issuer from request headers.
+  const publicUrl = [process.env.PUBLIC_URL, process.env.SERVICE_URL_LEGAL_MCP_3000, process.env.SERVICE_URL_LEGAL_MCP, process.env.COOLIFY_URL]
+    .map(value => value?.trim()).find(Boolean) ?? '';
   let publicHost: string | undefined;
   if (publicUrl) {
     const url = new URL(publicUrl);
@@ -31,7 +33,7 @@ export function loadConfig() {
   }
   const oauthEnabled = transport === 'http' && !publicRead && process.env.OAUTH_ENABLED !== 'false' && (process.env.OAUTH_ENABLED === 'true' || !!publicUrl);
   if (oauthEnabled) {
-    if (!publicUrl) throw new Error('OAuth requires PUBLIC_URL');
+    if (!publicUrl) throw new Error('OAuth requires PUBLIC_URL: set the public HTTPS origin as a runtime environment variable in Coolify and redeploy (for example https://recht.example.com, without /mcp or the internal :3000 port)');
     const url = new URL(publicUrl);
     if (url.pathname !== '/' || url.search || url.hash || (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname))) {
       throw new Error('OAuth PUBLIC_URL must be an HTTPS origin (HTTP only on localhost or 127.0.0.1)');

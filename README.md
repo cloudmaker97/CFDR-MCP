@@ -36,6 +36,15 @@ OAuth ist in der Coolify-Compose-Datei aktiviert. `PUBLIC_URL` muss die öffentl
 HTTPS-Adresse **ohne Pfad, Query oder internen Port** enthalten, zum Beispiel `https://recht.example.com`.
 Nach einem Update redeployen; ein vorgeschalteter OAuth-Gateway ist nicht erforderlich.
 
+**Neustartschleife mit `OAuth requires PUBLIC_URL`:** Unter **Environment Variables**
+`PUBLIC_URL=https://Ihre-tatsächliche-mcp-domain.de` ausdrücklich setzen, für **Runtime** aktivieren,
+speichern und **Redeploy** ausführen. Ein bloßer Neustart lädt keinen geänderten Git-Stand.
+Bei Docker Compose muss die Compose Location `/compose.coolify.yaml` sein. Die explizite
+`PUBLIC_URL` hat Vorrang vor der generierten Service-URL; nativ bzw. bei Dockerfile-Deployments
+wird auch eine verfügbare `COOLIFY_URL` berücksichtigt. Bei mehreren Domains die kanonische
+OAuth-Domain ausdrücklich über `PUBLIC_URL` wählen.
+[Coolify-Laufzeitvariablen](https://coolify.io/docs/applications/configuration/environment-variables).
+
 Die Compose-Datei veröffentlicht keinen Host-Port. Coolify übernimmt HTTPS und routet intern auf Port 3000.
 `legal-index` und `legal-source` sind persistente Volumes. Pro Volume-Paar darf nur ein Server schreiben;
 keine parallelen Instanzen oder überlappenden Deployments mit gemeinsamen Volumes betreiben.
