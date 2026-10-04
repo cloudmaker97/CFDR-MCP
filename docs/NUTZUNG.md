@@ -10,7 +10,7 @@ Die Software übernimmt keine Fristüberwachung, Vertretung oder fallbezogene an
 
 ## 2. Was der MCP-Server bereitstellt
 
-Der Server macht die Textinhalte der Sammlung `cloudmaker97/claude-fuer-deutsches-recht` durchsuchbar. Sie installieren nicht sämtliche Skills in Ihrem KI-Client. Stattdessen lädt Claude oder ChatGPT nur die für die Aufgabe gefundenen Dokumente.
+Der Server macht die Textinhalte der Sammlung `Klotzkette/claude-fuer-deutsches-recht` durchsuchbar. Sie installieren nicht sämtliche Skills in Ihrem KI-Client. Stattdessen lädt Claude oder ChatGPT nur die für die Aufgabe gefundenen Dokumente.
 
 Verfügbar sind Skills, Referenzen, Arbeitsabläufe, Vorlagen und weitere Textdokumente. Der Server führt keine Plugin-Hooks, Agenten oder Skripte aus. PDF, DOCX, Bilder und ZIP-Dateien werden nicht in Text umgewandelt; vorhandene Downloadlinks bleiben in den Dokumenten erhalten.
 

@@ -16,9 +16,9 @@ services:
       ALLOW_PUBLIC_READ: ${ALLOW_PUBLIC_READ:-false}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
-      REPO_URL: ${REPO_URL:-https://github.com/cloudmaker97/claude-fuer-deutsches-recht.git}
+      REPO_URL: ${REPO_URL:-https://github.com/Klotzkette/claude-fuer-deutsches-recht.git}
       REPO_BRANCH: ${REPO_BRANCH:-}
-      SOURCE_BASE_URL: ${SOURCE_BASE_URL:-https://github.com/cloudmaker97/claude-fuer-deutsches-recht}
+      SOURCE_BASE_URL: ${SOURCE_BASE_URL:-https://github.com/Klotzkette/claude-fuer-deutsches-recht}
       SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-900}
       SPARSE_CHECKOUT: ${SPARSE_CHECKOUT:-true}
       GIT_TIMEOUT_SECONDS: ${GIT_TIMEOUT_SECONDS:-300}

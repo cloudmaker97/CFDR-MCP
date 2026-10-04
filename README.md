@@ -1,7 +1,7 @@
 # Deutsches Recht MCP
 
 Ein Docker-kompatibler MCP-Server für die Textmaterialien aus
-[`cloudmaker97/claude-fuer-deutsches-recht`](https://github.com/cloudmaker97/claude-fuer-deutsches-recht).
+[`Klotzkette/claude-fuer-deutsches-recht`](https://github.com/Klotzkette/claude-fuer-deutsches-recht).
 Claude und ChatGPT laden passende Skills, Referenzen und Vorlagen gezielt über sechs Tools;
 die Installation der gesamten Plugin-Sammlung entfällt.
 
@@ -244,6 +244,23 @@ bei gemeinsamer Nutzung passend dimensionieren, ohne ungeprüfte Forwarded-Heade
 Tokenwechsel: festen Token in Coolify/der Umgebung ändern, redeployen, Clients aktualisieren.
 Für Datei-Tokens einen festen neuen Token vorgeben, statt das Datenvolume zu löschen.
 Volume-Löschung entfernt auch Index, Mirror und gegebenenfalls den generierten Token.
+
+### Bestehende Installation auf die kanonische Inhaltsquelle umstellen
+
+In Coolify oder einer vorhandenen `.env` auch gespeicherte Überschreibungen aktualisieren:
+`REPO_URL=https://github.com/Klotzkette/claude-fuer-deutsches-recht.git` und
+`SOURCE_BASE_URL=https://github.com/Klotzkette/claude-fuer-deutsches-recht`.
+Den vorhandenen Inhaltsmirror vor dem Redeployment ebenfalls umstellen; keine Volumes oder Tokens löschen:
+
+```sh
+docker compose exec -T legal-mcp git -C /app/content/repository remote set-url origin https://github.com/Klotzkette/claude-fuer-deutsches-recht.git
+docker compose up -d --build
+```
+
+Für Coolify den ersten Befehl als `git -C /app/content/repository remote set-url origin ...`
+im Container-Terminal ausführen und anschließend redeployen. Bei nativer Installation den
+verwalteten Mirror unter `content/repository` entsprechend umstellen. Die Git-Remote des
+Serverprojekts `KlotzketteMCP` bleibt davon unabhängig.
 
 - `/healthz`: Prozess läuft; ohne Token.
 - `/readyz`: Index verfügbar; ohne Token.

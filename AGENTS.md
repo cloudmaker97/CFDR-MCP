@@ -2,7 +2,7 @@
 
 ## Project Status & Purpose
 
-This workspace is currently empty and is not initialized as a Git repository. The intended project is a performant MCP server that exposes content from `cloudmaker97/claude-fuer-deutsches-recht` through targeted queries for Claude and ChatGPT. No implementation language, framework, or package manager has been selected yet.
+This workspace is currently empty and is not initialized as a Git repository. The intended project is a performant MCP server that exposes content from `Klotzkette/claude-fuer-deutsches-recht` through targeted queries for Claude and ChatGPT. No implementation language, framework, or package manager has been selected yet.
 
 ## Project Structure & Module Organization
 
