@@ -23,7 +23,8 @@ async function fixture(fn) {
   const root = await mkdtemp(join(tmpdir(), 'legal-oauth-'));
   const config = { ...loadConfig(), dataDir: root, token: apiKey, oauthEnabled: true, publicUrl: issuer, publicRead: false };
   const store = new ContentStore();
-  const app = createHttpApp(config, store, { lastError: null, updating: false }, pino({ level: 'silent' }));
+  const logs = [];
+  const app = createHttpApp(config, store, { lastError: null, updating: false }, pino({ level: 'info' }, { write: line => logs.push(JSON.parse(line)) }));
   const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   const post = (path, body, headers = {}) => fetch(`${base}${path}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams(body) });
@@ -54,7 +55,7 @@ async function fixture(fn) {
     return { client, tokens: await tokenResponse.json(), code };
   };
   const metrics = token => fetch(`${base}/metrics`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  try { await fn({ root, config, base, post, register, authorize, approve, consent, exchange, login, metrics }); }
+  try { await fn({ root, config, base, post, register, authorize, approve, consent, exchange, login, metrics, logs }); }
   finally { app.locals.stopRateLimiter(); await new Promise(r => server.close(r)); app.locals.stopOAuth(); store.close(); await rm(root, { recursive: true, force: true }); }
 }
 
@@ -69,6 +70,7 @@ test('OAuth discovery, escaped consent, PKCE login and API-key compatibility', (
   const flow = await f.authorize(client);
   assert.match(flow.html, /&lt;script&gt;/); assert.ok(!flow.html.includes(apiKey)); assert.match(flow.html, /Keine Rechtsberatung/);
   assert.match(flow.response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.equal(flow.response.headers.get('referrer-policy'), 'same-origin');
   assert.match(flow.response.headers.get('set-cookie'), /HttpOnly/);
   const approved = await f.approve(flow); assert.equal(approved.status, 303);
   const code = new URL(approved.headers.get('location')).searchParams.get('code');
@@ -86,12 +88,41 @@ test('consent rejects incorrect keys, CSRF and foreign origins; cancellation ret
   const { client } = await f.register(); const flow = await f.authorize(client);
   assert.equal((await f.approve(flow, { csrf: 'bad' })).status, 403);
   assert.equal((await f.approve(flow, {}, { Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await f.approve(flow, {}, { Origin: 'null' })).status, 403);
   assert.equal((await f.approve(flow, {}, { Cookie: '' })).status, 403);
   const wrong = await f.approve(flow, { api_key: 'wrong-key' }); assert.equal(wrong.status, 403); assert.match(await wrong.text(), /API-Schlüssel ungültig/);
+  for (const failure of ['csrf_mismatch', 'origin_mismatch', 'cookie_missing', 'invalid_api_key']) assert.ok(f.logs.some(entry => entry.failure === failure));
+  const logs = JSON.stringify(f.logs);
+  assert.ok(!logs.includes(apiKey)); assert.ok(!logs.includes('wrong-key')); assert.ok(!logs.includes(flow.csrf)); assert.ok(!logs.includes(flow.id));
   const cancelled = await f.approve(flow, { action: 'deny', api_key: '' });
   assert.equal(cancelled.status, 303); const location = new URL(cancelled.headers.get('location'));
   assert.equal(location.searchParams.get('error'), 'access_denied'); assert.equal(location.searchParams.get('state'), 'client-state');
   assert.equal((await f.approve(flow)).status, 403);
+}));
+
+test('parallel browser login tabs keep independent CSRF cookies', () => fixture(async f => {
+  const { client } = await f.register();
+  const first = await f.authorize(client), second = await f.authorize(client);
+  assert.notEqual(first.cookie.split('=')[0], second.cookie.split('=')[0]);
+  const jar = `${first.cookie}; ${second.cookie}`;
+  assert.equal((await f.approve(first, {}, { Cookie: jar })).status, 303);
+  assert.equal((await f.approve(second, {}, { Cookie: jar })).status, 303);
+}));
+
+test('SDK OAuth rate limits stay enabled behind untrusted forwarded headers without proxy warnings', () => fixture(async f => {
+  const messages = [], previous = console.error;
+  console.error = (...args) => messages.push(args.join(' '));
+  const headers = { 'X-Forwarded-For': '203.0.113.1', Forwarded: 'for=203.0.113.1;proto=https' };
+  try {
+    const { client } = await f.register();
+    await fetch(`${f.base}/authorize?client_id=${client.client_id}`, { headers, redirect: 'manual' });
+    const token = await f.post('/token', { client_id: client.client_id, grant_type: 'unsupported' }, headers);
+    assert.ok(token.headers.get('ratelimit-limit'));
+    await f.post('/revoke', { client_id: client.client_id, token: 'unknown' }, headers);
+    const response = await fetch(`${f.base}/register`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ redirect_uris: [redirect], token_endpoint_auth_method: 'none' }) });
+    assert.equal(response.status, 201);
+    assert.equal(messages.length, 0, messages.join('\n'));
+  } finally { console.error = previous; }
 }));
 
 test('authorization restricts redirect, PKCE method, scopes and audience', () => fixture(async f => {

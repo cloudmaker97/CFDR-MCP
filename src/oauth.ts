@@ -18,6 +18,7 @@ const GRANT_SECONDS = 30 * 86400;
 const now = () => Math.floor(Date.now() / 1000);
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const secret = () => randomBytes(32).toString('base64url');
+const cookieName = (id: string) => `legal_oauth_csrf_${hash(id).slice(0, 16)}`;
 const equal = (a: string, b: string) => timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 type Grant = { client: string; expires: number; revoked: boolean };
@@ -110,12 +111,14 @@ export class ApiKeyOAuthProvider implements OAuthServerProvider {
     if (count >= 1000) throw new TooManyRequestsError('Too many pending authorizations');
     const id = secret(), csrf = secret();
     this.put('pending', hash(id), { client: client.client_id, params, csrf: hash(csrf), attempts: 0 }, now() + 600);
-    res.cookie('legal_oauth_csrf', csrf, { httpOnly: true, secure: this.issuer.protocol === 'https:', sameSite: 'lax', path: '/oauth/approve', maxAge: 600000 });
+    res.cookie(cookieName(id), csrf, { httpOnly: true, secure: this.issuer.protocol === 'https:', sameSite: 'lax', path: '/oauth/approve', maxAge: 600000 });
     this.page(res, id, csrf, client, params);
   }
 
   private page(res: Response, id: string, csrf: string, client: OAuthClientInformationFull, params: AuthorizationParams, error = '') {
-    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" });
+    // no-referrer turns browser form POST origins into null; same-origin preserves CSRF checks
+    // while withholding the authorization URL from external destinations.
+    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" });
     res.type('html').send(`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Klotzkette MCP – Zugriff freigeben</title><style>body{font:17px system-ui;max-width:650px;margin:3rem auto;padding:1rem;line-height:1.6}input{width:95%;padding:.6rem}button{padding:.7rem;margin:.8rem .4rem 0 0}aside{background:#eee;padding:1rem}p.error{color:#a00}</style><h1>Klotzkette MCP</h1><h2>Zugriff freigeben</h2><p>Die Anwendung <strong>${escape(client.client_name || 'Unbenannte Anwendung')}</strong> möchte Inhalte lesen und durchsuchen (${SCOPE}). Der Anwendungsname wurde vom Client angegeben und ist nicht verifiziert.</p><p>Rückleitung: <code>${escape(new URL(params.redirectUri).origin)}</code></p><p>Prüfe diese Anwendung und die Adresse dieser Anmeldeseite: <strong>${escape(this.issuer.origin)}</strong>. Gib deinen API-Schlüssel nur hier ein. Er wird nicht an die Anwendung weitergegeben.</p>${error ? `<p class="error">${escape(error)}</p>` : ''}<form method="post" action="/oauth/approve"><input type="hidden" name="request" value="${id}"><input type="hidden" name="csrf" value="${csrf}"><label>API-Schlüssel (MCP_AUTH_TOKEN)<input type="password" name="api_key" autocomplete="off" maxlength="4096" required></label><button name="action" value="allow">Lesezugriff erlauben</button><button name="action" value="deny" formnovalidate>Abbrechen</button></form><p>Zugriffstokens gelten eine Stunde. Die Freigabe kann bis zu 30 Tage erneuert werden. Eine Änderung des API-Schlüssels widerruft bestehende Freigaben.</p><aside>${escape(LEGAL_DISCLAIMER)}</aside></html>`);
   }
 
@@ -123,7 +126,7 @@ export class ApiKeyOAuthProvider implements OAuthServerProvider {
     const router = express.Router();
     const attempts = new Map<string, { count: number; expires: number }>();
     router.post('/oauth/approve', express.urlencoded({ extended: false, limit: '8kb', parameterLimit: 10 }), (req, res) => {
-      res.set('Cache-Control', 'no-store');
+      res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
       for (const [ip, bucket] of attempts) if (bucket.expires <= Date.now()) attempts.delete(ip);
       const ip = req.ip ?? 'unknown';
       let bucket = attempts.get(ip);
@@ -133,9 +136,11 @@ export class ApiKeyOAuthProvider implements OAuthServerProvider {
       }
       if (++bucket.count > 10) { res.set('Retry-After', '60').status(429).send('Zu viele Anmeldeversuche'); return; }
       const { request: id, csrf, api_key: key, action } = req.body ?? {};
-      const cookie = req.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('legal_oauth_csrf='))?.slice('legal_oauth_csrf='.length);
+      const name = typeof id === 'string' ? cookieName(id) : '';
+      const cookie = req.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${name}=`))?.slice(name.length + 1);
       const pending = typeof id === 'string' ? this.get<Pending>('pending', hash(id)) : undefined;
       if (!pending || typeof csrf !== 'string' || !cookie || !equal(csrf, cookie) || !equal(hash(csrf), pending.csrf) || (req.headers.origin && req.headers.origin !== this.issuer.origin)) {
+        res.locals.oauthFailure = !pending ? 'request_missing_or_expired' : !cookie ? 'cookie_missing' : typeof csrf !== 'string' || !equal(csrf, cookie) || !equal(hash(csrf), pending.csrf) ? 'csrf_mismatch' : 'origin_mismatch';
         res.status(403).send('Ungültige oder abgelaufene Anmeldung. Bitte erneut verbinden.'); return;
       }
       const redirect = new URL(pending.params.redirectUri);
@@ -144,6 +149,7 @@ export class ApiKeyOAuthProvider implements OAuthServerProvider {
         this.remove('pending', hash(id)); redirect.searchParams.set('error', 'access_denied');
       } else if (action === 'allow') {
         if (typeof key !== 'string' || !equal(key, this.config.token)) {
+          res.locals.oauthFailure = 'invalid_api_key';
           pending.attempts++;
           if (pending.attempts >= 5) { this.remove('pending', hash(id)); res.status(403).send('Zu viele Fehlversuche. Bitte erneut verbinden.'); return; }
           this.put('pending', hash(id), pending, now() + 300);
@@ -159,7 +165,7 @@ export class ApiKeyOAuthProvider implements OAuthServerProvider {
         });
         redirect.searchParams.set('code', code);
       } else { res.status(400).send('Ungültige Aktion'); return; }
-      res.clearCookie('legal_oauth_csrf', { path: '/oauth/approve', secure: this.issuer.protocol === 'https:', sameSite: 'lax', httpOnly: true });
+      res.clearCookie(name, { path: '/oauth/approve', secure: this.issuer.protocol === 'https:', sameSite: 'lax', httpOnly: true });
       res.redirect(303, redirect.href);
     });
     return router;
@@ -226,7 +232,12 @@ export class ApiKeyOAuthProvider implements OAuthServerProvider {
 export function installOAuth(app: express.Express, config: Config) {
   const provider = new ApiKeyOAuthProvider(config);
   app.use(provider.approvalRouter());
-  app.use(mcpAuthRouter({ provider, issuerUrl: provider.issuer, resourceServerUrl: provider.resource, scopesSupported: [SCOPE], resourceName: 'Klotzkette Deutsches Recht MCP', serviceDocumentationUrl: new URL('/guide', provider.issuer) }));
+  // Intentionally count direct peer IPs, including behind Coolify. Never trust arbitrary
+  // forwarded headers; silence only the SDK limiter's warnings about ignored headers.
+  const rateLimit = { validate: { xForwardedForHeader: false, forwardedHeader: false } };
+  app.use(mcpAuthRouter({ provider, issuerUrl: provider.issuer, resourceServerUrl: provider.resource, scopesSupported: [SCOPE], resourceName: 'Klotzkette Deutsches Recht MCP', serviceDocumentationUrl: new URL('/guide', provider.issuer),
+    authorizationOptions: { rateLimit }, tokenOptions: { rateLimit }, clientRegistrationOptions: { rateLimit }, revocationOptions: { rateLimit },
+  }));
   app.locals.stopOAuth = () => provider.close();
   return requireBearerAuth({ verifier: provider, requiredScopes: [SCOPE], expectedResource: provider.resource, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(provider.resource) });
 }

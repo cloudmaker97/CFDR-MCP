@@ -322,6 +322,16 @@ Zugriffstokens gelten eine Stunde, Freigaben höchstens 30 Tage. Refresh-Tokens 
 Verwendung ersetzt; erkannte Wiederverwendung widerruft die gesamte Freigabe. `/revoke` erlaubt
 Client-authentifizierten Widerruf. Ein API-Schlüssel- oder Issuer-Wechsel widerruft alle Freigaben.
 OAuth-Endpunkte haben eigene Limits; hinter Coolify teilen Anfragen dessen Peer-IP.
+Weiterleitungs-Header werden bewusst nicht zur IP-Ermittlung verwendet; `trust proxy` bleibt
+deaktiviert. Die SDK-Limits bleiben aktiv, ohne Warnung über diese bewusst ignorierten Header.
+
+Bei **„Ungültige oder abgelaufene Anmeldung“** die Verbindung im Client erneut starten und die
+neue Freigabeseite verwenden. Cookies für die eigene Serverdomain müssen erlaubt sein.
+Parallele Anmeldungen verwenden getrennte Cookies. Nach einem Redeployment alte Formulare schließen.
+OAuth-Logs nennen bei abgewiesenen Formularen einen nicht vertraulichen `failure`-Grund:
+`cookie_missing`, `request_missing_or_expired`, `csrf_mismatch`, `origin_mismatch` oder `invalid_api_key`.
+Ein falscher Schlüssel zeigt ausdrücklich **„API-Schlüssel ungültig“**; `source: environment` im
+Startlog bestätigt, dass ein Schlüssel aus der Umgebung geladen wurde, ohne ihn auszugeben.
 
 `data/oauth.sqlite` speichert Clientdaten und Freigaben persistent. Zugriffs- und Refresh-Tokens
 liegen nur als SHA-256-Hashes vor; registrierte Client-Secrets sind für die SDK-Authentifizierung in

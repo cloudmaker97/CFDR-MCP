@@ -18,7 +18,7 @@ export function createHttpApp(config: Config, store: ContentStore, sync: Reposit
   app.use(hostHeaderValidation(config.allowedHosts));
   app.use(['/authorize', '/token', '/register', '/revoke', '/oauth/approve'], (req, res, next) => {
     const start = performance.now();
-    res.on('finish', () => log.info({ method: req.method, status: res.statusCode, durationMs: Math.round((performance.now() - start) * 100) / 100 }, 'OAuth request'));
+    res.on('finish', () => log.info({ method: req.method, status: res.statusCode, durationMs: Math.round((performance.now() - start) * 100) / 100, failure: res.locals.oauthFailure }, 'OAuth request'));
     next();
   });
   const oauthAuth = config.oauthEnabled ? installOAuth(app, config) : undefined;
